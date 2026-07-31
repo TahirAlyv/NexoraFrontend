@@ -5,6 +5,8 @@ import api from "../services/api";
 import ProfileView from "../components/Profile/ProfileView/ProfileView";
 import EmployerProfileView from "../components/Profile/ProfileView/EmployerProfileView";
 
+import LoadingSpinner from "../components/UI/LoadingSpinner";
+
 const UserProfilePage = ({ likeConnection }) => {
   const { username } = useParams();
   const [user, setUser] = useState(null);
@@ -24,8 +26,7 @@ const UserProfilePage = ({ likeConnection }) => {
     }
   }, [token]);
 
-  const isOwner =
-    currentUsername?.toLowerCase() === username?.toLowerCase();
+  const isOwner = currentUsername?.toLowerCase() === username?.toLowerCase();
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -55,32 +56,34 @@ const UserProfilePage = ({ likeConnection }) => {
   }, [username, isOwner]);
 
   if (loading) {
-    return <div style={{ textAlign: "center", marginTop: 50 }}>Loading...</div>;
+    return <LoadingSpinner text="Loading member profile..." />;
   }
 
   if (!user) {
     return (
-      <div style={{ textAlign: "center", marginTop: 50 }}>
-        User not found.
-      </div>
+      <div style={{ textAlign: "center", marginTop: 50 }}>User not found.</div>
     );
   }
 
-const isEmployer =
-  user?.userType === "Employer" ||
-  user?.role === "Employer";
+  const isEmployer =
+    user?.userType === "Employer" ||
+    user?.UserType === "Employer" ||
+    Number(user?.userType ?? user?.UserType) === 2 ||
+    user?.role === "Employer" ||
+    user?.Role === "Employer" ||
+    !!(user?.companyInfo || user?.CompanyInfo);
 
-if (isEmployer) {
-  return (
-    <EmployerProfileView
-      user={user}
-      setUser={setUser}
-      isOwner={isOwner}
-      readOnly={!isOwner}
-      likeConnection={likeConnection}
-    />
-  );
-}
+  if (isEmployer) {
+    return (
+      <EmployerProfileView
+        user={user}
+        setUser={setUser}
+        isOwner={isOwner}
+        readOnly={!isOwner}
+        likeConnection={likeConnection}
+      />
+    );
+  }
 
   return (
     <ProfileView

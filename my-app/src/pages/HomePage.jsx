@@ -1,74 +1,58 @@
 import React, { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 
 import Navbar from "../components/Layout/Navbar";
 import CreatePostBox from "../components/Post/CreatePostBox";
 import HomeFeed from "../components/Home/HomeFeed";
+import HomeSidebarWidgets from "../components/Home/HomeSidebarWidgets";
+import NexoraTrends from "../components/Home/NexoraTrends";
 import Toast from "../components/UI/Toast";
 
 import api from "../services/api";
 import defaultAvatar from "../assets/default-avatar.png";
-import defaultBackground from "../assets/defoultBackground.jpg";
-
-const API_ROOT = (api.defaults.baseURL || "").replace(/\/api\/?$/, "");
+import "./HomePage.css";
+import { resolveMediaUrl } from "../utils/mediaUrl";
 
 const HomePage = ({ likeConnection }) => {
+  const navigate = useNavigate();
   const user = useSelector((state) => state.user.user);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [postMediaIntent, setPostMediaIntent] = useState("");
   const [feedRefreshKey, setFeedRefreshKey] = useState(0);
   const [connectionCount, setConnectionCount] = useState(0);
   const [toast, setToast] = useState(null);
   const isCurrentEmployer =
-  user?.userType === "Employer" ||
-  user?.role === "Employer" ||
-  user?.roleName === "Employer" ||
-  user?.basicInfo?.userType === "Employer" ||
-  user?.basicInfo?.role === "Employer" ||
-  user?.basicInfo?.roleName === "Employer" ||
-  !!user?.companyInfo ||
-  !!user?.company;
+    user?.userType === "Employer" ||
+    user?.role === "Employer" ||
+    user?.roleName === "Employer" ||
+    user?.basicInfo?.userType === "Employer" ||
+    user?.basicInfo?.role === "Employer" ||
+    user?.basicInfo?.roleName === "Employer" ||
+    !!user?.companyInfo ||
+    !!user?.company;
 
   const basicInfo = user?.basicInfo || user || {};
 
-  const fullName =
-    basicInfo.fullName ||
-    user?.fullName ||
-    user?.name ||
-    "User";
+  const fullName = basicInfo.fullName || user?.fullName || user?.name || "User";
 
-  const username =
-    basicInfo.username ||
-    user?.username ||
-    "";
+  const username = basicInfo.username || user?.username || "";
 
   const currentPosition =
-    basicInfo.currentPosition ||
-    user?.currentPosition ||
-    "Member";
+    basicInfo.currentPosition || user?.currentPosition || "Member";
 
-  const location =
-    basicInfo.location ||
-    user?.location ||
-    "";
+  const location = basicInfo.location || user?.location || "";
 
-  const profileImage =
-    basicInfo.profileImage ||
-    user?.profileImage ||
-    "";
+  const profileImage = basicInfo.profileImage || user?.profileImage || "";
 
   const backgroundImage =
-    basicInfo.backgroundImage ||
-    user?.backgroundImage ||
-    "";
+    basicInfo.backgroundImage || user?.backgroundImage || "";
 
-  const profileImageSrc = profileImage
-    ? `${API_ROOT}/${profileImage.replace(/^\/+/, "")}`
-    : defaultAvatar;
-
+  const profileImageSrc = resolveMediaUrl(profileImage, defaultAvatar);
   const backgroundImageSrc = backgroundImage
-    ? `${API_ROOT}/${backgroundImage.replace(/^\/+/, "")}`
-    : defaultBackground;
+    ? resolveMediaUrl(backgroundImage, "")
+    : "";
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -82,10 +66,10 @@ const HomePage = ({ likeConnection }) => {
         const data = Array.isArray(res.data)
           ? res.data
           : Array.isArray(res.data?.data)
-          ? res.data.data
-          : Array.isArray(res.data?.Data)
-          ? res.data.Data
-          : [];
+            ? res.data.data
+            : Array.isArray(res.data?.Data)
+              ? res.data.Data
+              : [];
 
         setConnectionCount(data.length);
       } catch (err) {
@@ -109,6 +93,7 @@ const HomePage = ({ likeConnection }) => {
 
   const handlePostCreated = () => {
     setIsCreateOpen(false);
+    setPostMediaIntent("");
     setFeedRefreshKey((prev) => prev + 1);
     showToast("Post shared successfully.", "success");
   };
@@ -125,106 +110,212 @@ const HomePage = ({ likeConnection }) => {
         />
       )}
 
-      <div style={styles.page}>
-        <div style={styles.layout}>
-          <aside style={styles.leftSidebar}>
-            <div style={styles.profileCard}>
+      <div className="home-page">
+        <div className="home-layout">
+          <aside className="home-sidebar">
+            <div className="home-profile-card">
               <div
-                style={{
-                  ...styles.cover,
-                  backgroundImage: `url(${backgroundImageSrc})`,
-                }}
-              />
+                className={`home-cover${backgroundImageSrc ? " has-cover-image" : " is-nexora-default"}`}
+                style={
+                  backgroundImageSrc
+                    ? { backgroundImage: `url(${backgroundImageSrc})` }
+                    : undefined
+                }
+              >
+                {!backgroundImageSrc && (
+                  <span className="nexora-cover-mark" aria-hidden="true">N</span>
+                )}
+              </div>
 
-              <div style={styles.profileBody}>
+              <div className="home-profile-body">
                 <img
                   src={profileImageSrc}
                   alt={fullName}
+                  className="home-profile-avatar"
                   style={{
-                    ...styles.profileAvatar,
                     borderRadius: isCurrentEmployer ? "10px" : "50%",
+                  }}
+                  onError={(e) => {
+                    e.currentTarget.src = defaultAvatar;
                   }}
                 />
 
-                <div style={styles.profileName}>{fullName}</div>
+                <div className="home-profile-name">{fullName}</div>
 
-                <div style={styles.profileTitle}>
+                <div className="home-profile-title">
                   {currentPosition || "Member"}
                 </div>
 
                 {location && (
-                  <div style={styles.profileLocation}>{location}</div>
+                  <div className="home-profile-location">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      strokeWidth="2"
+                      stroke="currentColor"
+                      width="14"
+                      height="14"
+                      style={{ color: "var(--app-muted)" }}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z"
+                      />
+                    </svg>
+                    {location}
+                  </div>
                 )}
 
                 {username && (
-                  <a href="/profile" style={styles.profileLink}>
-                    View profile
+                  <a
+                    href={`/profile/${username}`}
+                    className="home-profile-link"
+                  >
+                    View Profile
                   </a>
                 )}
               </div>
             </div>
 
-            <div style={styles.statsCard}>
-              <div style={styles.statsRow}>
+            <button
+              type="button"
+              className="home-stats-card home-connections-card"
+              onClick={() => navigate("/network")}
+            >
+              <div className="home-stats-row">
                 <span>Connections</span>
                 <strong>{connectionCount}</strong>
               </div>
 
-              <div style={styles.smallMuted}>Grow your network</div>
-            </div>
- 
+              <div className="home-stats-muted">Grow your network</div>
+            </button>
+
+            <HomeSidebarWidgets
+              isEmployer={isCurrentEmployer}
+              showToast={showToast}
+            />
           </aside>
 
-          <main style={styles.feed}>
-            <div style={styles.createCard}>
-              <div style={styles.createTop}>
+          <main className="home-feed">
+            <div className="home-create-card">
+              <div className="home-create-top">
                 <img
                   src={profileImageSrc}
                   alt={fullName}
+                  className="home-create-avatar"
                   style={{
-                    ...styles.createAvatar,
                     borderRadius: isCurrentEmployer ? "8px" : "50%",
+                  }}
+                  onError={(e) => {
+                    e.currentTarget.src = defaultAvatar;
                   }}
                 />
 
                 <button
                   type="button"
-                  style={styles.createInput}
-                  onClick={() => setIsCreateOpen(true)}
+                  className="home-create-input"
+                  onClick={() => {
+                    setPostMediaIntent("");
+                    setIsCreateOpen(true);
+                  }}
                 >
                   Start a post
                 </button>
               </div>
 
-              <div style={styles.createActions}>
+              <div className="home-create-actions">
                 <button
                   type="button"
-                  style={styles.actionButton}
-                  onClick={() => setIsCreateOpen(true)}
+                  className="home-action-btn photo"
+                  onClick={() => {
+                    setPostMediaIntent("image");
+                    setIsCreateOpen(true);
+                  }}
                 >
-                  Video
-                </button>
-
-                <button
-                  type="button"
-                  style={styles.actionButton}
-                  onClick={() => setIsCreateOpen(true)}
-                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2.2"
+                    stroke="currentColor"
+                    width="18"
+                    height="18"
+                    style={{ color: "#22c55e" }}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
+                    />
+                  </svg>
                   Photo
                 </button>
 
                 <button
                   type="button"
-                  style={styles.actionButton}
-                  onClick={() => setIsCreateOpen(true)}
+                  className="home-action-btn video"
+                  onClick={() => {
+                    setPostMediaIntent("video");
+                    setIsCreateOpen(true);
+                  }}
                 >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2.2"
+                    stroke="currentColor"
+                    width="18"
+                    height="18"
+                    style={{ color: "#f97316" }}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"
+                    />
+                  </svg>
+                  Video
+                </button>
+
+                <button
+                  type="button"
+                  className="home-action-btn article"
+                  onClick={() => {
+                    setPostMediaIntent("");
+                    setIsCreateOpen(true);
+                  }}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth="2.2"
+                    stroke="currentColor"
+                    width="18"
+                    height="18"
+                    style={{ color: "#3b82f6" }}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 0 1-2.25 2.25M16.5 7.5V18a2.25 2.25 0 0 0 2.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 0 0 2.25 2.25h13.5M6 7.5h3v3H6v-3Z"
+                    />
+                  </svg>
                   Write article
                 </button>
               </div>
             </div>
 
-            <div style={styles.sortRow}>
-              <div style={styles.line}></div>
+            <div className="home-sort-row">
+              <div className="home-sort-line"></div>
               <span>Sort by: Top</span>
             </div>
 
@@ -234,272 +325,45 @@ const HomePage = ({ likeConnection }) => {
               showToast={showToast}
             />
           </main>
+
+          <aside className="home-right-sidebar">
+            <NexoraTrends />
+          </aside>
         </div>
       </div>
 
       {isCreateOpen && (
-        <div style={styles.modalOverlay} onClick={() => setIsCreateOpen(false)}>
-          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+        <div
+          className="home-modal-overlay"
+          onClick={() => {
+            setIsCreateOpen(false);
+            setPostMediaIntent("");
+          }}
+        >
+          <div
+            className="home-modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
-              style={styles.modalClose}
-              onClick={() => setIsCreateOpen(false)}
+              className="home-modal-close"
+              onClick={() => {
+                setIsCreateOpen(false);
+                setPostMediaIntent("");
+              }}
             >
               ×
             </button>
 
-            <CreatePostBox onPostCreated={handlePostCreated} />
+            <CreatePostBox
+              onPostCreated={handlePostCreated}
+              autoOpenMedia={postMediaIntent}
+            />
           </div>
         </div>
       )}
     </div>
   );
-};
-
-const styles = {
-  page: {
-    backgroundColor: "#f3f2ef",
-    minHeight: "100vh",
-    paddingTop: "18px",
-    paddingBottom: "40px",
-  },
-
-layout: {
-  maxWidth: "980px",
-  margin: "0 auto",
-  display: "grid",
-  gridTemplateColumns: "225px 720px",
-  gap: "22px",
-  alignItems: "flex-start",
-},
-
-  leftSidebar: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-  },
-
-  profileCard: {
-    backgroundColor: "#fff",
-    border: "1px solid #dcdcdc",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-
-  cover: {
-    height: "58px",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-    backgroundColor: "#dce6ef",
-  },
-
-  profileBody: {
-    position: "relative",
-    padding: "40px 14px 14px",
-    textAlign: "center",
-  },
-
-  profileAvatar: {
-    width: "72px",
-    height: "72px",
-    borderRadius: "50%",
-    objectFit: "cover",
-    border: "2px solid #fff",
-    position: "absolute",
-    top: "-38px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    backgroundColor: "#fff",
-  },
-
-  profileName: {
-    fontSize: "18px",
-    fontWeight: "700",
-    color: "#191919",
-    lineHeight: "1.2",
-    marginBottom: "5px",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  profileTitle: {
-    fontSize: "12px",
-    color: "#333",
-    lineHeight: "1.35",
-    marginBottom: "4px",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  profileLocation: {
-    fontSize: "12px",
-    color: "#666",
-    marginBottom: "10px",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  profileLink: {
-    display: "inline-block",
-    marginTop: "8px",
-    fontSize: "13px",
-    color: "#0a66c2",
-    fontWeight: "700",
-    textDecoration: "none",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  statsCard: {
-    backgroundColor: "#fff",
-    border: "1px solid #dcdcdc",
-    borderRadius: "8px",
-    padding: "12px 14px",
-  },
-
-  statsRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: "13px",
-    color: "#191919",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  smallMuted: {
-    fontSize: "12px",
-    color: "#666",
-    marginTop: "5px",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  menuCard: {
-    backgroundColor: "#fff",
-    border: "1px solid #dcdcdc",
-    borderRadius: "8px",
-    padding: "8px 0",
-  },
-
-  menuItem: {
-    padding: "8px 14px",
-    fontSize: "13px",
-    color: "#191919",
-    fontWeight: "600",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
- feed: {
-  width: "680px",
-},
-  createCard: {
-    backgroundColor: "#fff",
-    border: "1px solid #dcdcdc",
-    borderRadius: "8px",
-    padding: "12px 16px",
-    marginBottom: "14px",
-  },
-
-  createTop: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    marginBottom: "12px",
-  },
-
-  createAvatar: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "50%",
-    objectFit: "cover",
-  },
-
-  createInput: {
-    flex: 1,
-    height: "48px",
-    borderRadius: "999px",
-    border: "1px solid #b2b2b2",
-    backgroundColor: "#fff",
-    textAlign: "left",
-    padding: "0 20px",
-    fontSize: "15px",
-    fontWeight: "600",
-    color: "#333",
-    cursor: "pointer",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  createActions: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  actionButton: {
-    border: "none",
-    backgroundColor: "transparent",
-    padding: "8px 10px",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: "600",
-    color: "#444",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  sortRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "8px",
-    fontSize: "12px",
-    color: "#666",
-    justifyContent: "flex-end",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  line: {
-    flex: 1,
-    height: "1px",
-    backgroundColor: "#d0d0d0",
-  },
-
-  modalOverlay: {
-    position: "fixed",
-    inset: 0,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    zIndex: 9999,
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "flex-start",
-    paddingTop: "70px",
-  },
-
-  modalContent: {
-    width: "560px",
-    position: "relative",
-  },
-
-  modalClose: {
-    position: "absolute",
-    top: "10px",
-    right: "12px",
-    width: "32px",
-    height: "32px",
-    borderRadius: "50%",
-    border: "none",
-    backgroundColor: "#f3f2ef",
-    color: "#333",
-    fontSize: "24px",
-    lineHeight: "32px",
-    cursor: "pointer",
-    zIndex: 2,
-  },
 };
 
 export default HomePage;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 import { jwtDecode } from "jwt-decode";
-import api from "../../services/api";
+import api, { API_ROOT } from "../../services/api";
 
 import CommentInput from "./commentInput";
 import CommentItem from "./commentItem";
@@ -31,24 +31,14 @@ export default function CommentWindow({
     return {
       ...comment,
       commentId:
-        comment.commentId ??
-        comment.CommentId ??
-        comment.id ??
-        comment.Id,
+        comment.commentId ?? comment.CommentId ?? comment.id ?? comment.Id,
 
       postId: comment.postId ?? comment.PostId,
 
       content:
-        comment.content ??
-        comment.Content ??
-        comment.text ??
-        comment.Text,
+        comment.content ?? comment.Content ?? comment.text ?? comment.Text,
 
-      text:
-        comment.text ??
-        comment.Text ??
-        comment.content ??
-        comment.Content,
+      text: comment.text ?? comment.Text ?? comment.content ?? comment.Content,
 
       createdAt: comment.createdAt ?? comment.CreatedAt,
       updatedAt: comment.updatedAt ?? comment.UpdatedAt,
@@ -114,7 +104,7 @@ export default function CommentWindow({
         }
 
         const res = await api.get(
-          `/Comment/comments/${postId}?page=${pageToLoad}&pageSize=${PAGE_SIZE}`
+          `/Comment/comments/${postId}?page=${pageToLoad}&pageSize=${PAGE_SIZE}`,
         );
 
         const rawComments = extractComments(res.data);
@@ -128,7 +118,7 @@ export default function CommentWindow({
           const existingIds = new Set(prev.map((c) => c.commentId));
 
           const newItems = normalizedComments.filter(
-            (c) => !existingIds.has(c.commentId)
+            (c) => !existingIds.has(c.commentId),
           );
 
           return [...prev, ...newItems];
@@ -143,13 +133,13 @@ export default function CommentWindow({
           setComments([]);
         }
 
-        showToast?.("Commentlər yüklənmədi.", "error");
+        showToast?.("Comments could not be loaded.", "error");
       } finally {
         setLoading(false);
         setLoadingMore(false);
       }
     },
-    [postId, showToast]
+    [postId, showToast],
   );
 
   useEffect(() => {
@@ -187,7 +177,7 @@ export default function CommentWindow({
     const connect = async () => {
       try {
         const connection = new signalR.HubConnectionBuilder()
-          .withUrl("https://localhost:7257/commenthub", {
+          .withUrl(`${API_ROOT}/commenthub`, {
             accessTokenFactory: () => localStorage.getItem("token"),
           })
           .withAutomaticReconnect()
@@ -200,7 +190,7 @@ export default function CommentWindow({
 
           setComments((prev) => {
             const exists = prev.some(
-              (c) => c.commentId === normalizedComment.commentId
+              (c) => c.commentId === normalizedComment.commentId,
             );
 
             if (exists) return prev;
@@ -227,24 +217,25 @@ export default function CommentWindow({
 
         connection.on("ReceiveCommentUpdated", (updatedComment) => {
           if (!isMounted) return;
-                
+
           const normalized = normalizeComment(updatedComment);
-                
+
           setComments((prev) =>
             prev.map((c) => {
               if (c.commentId !== normalized.commentId) {
                 return c;
               }
-            
-              const newText = normalized.content ?? normalized.text ?? c.content ?? c.text;
-            
+
+              const newText =
+                normalized.content ?? normalized.text ?? c.content ?? c.text;
+
               return {
                 ...c,
-              
+
                 // yalnız dəyişən text sahələrini update edirik
                 content: newText,
                 text: newText,
-              
+
                 // undefined field-lərlə köhnə user/date datasını pozmuruq
                 updatedAt: normalized.updatedAt ?? c.updatedAt,
                 createdAt: c.createdAt,
@@ -253,7 +244,7 @@ export default function CommentWindow({
                 userPhoto: c.userPhoto,
                 userProfileUrl: c.userProfileUrl,
               };
-            })
+            }),
           );
         });
 
@@ -261,7 +252,7 @@ export default function CommentWindow({
           connection
             .invoke("JoinPost", postId)
             .catch((err) =>
-              console.error("JoinPost after reconnect failed:", err)
+              console.error("JoinPost after reconnect failed:", err),
             );
         });
 
@@ -271,7 +262,7 @@ export default function CommentWindow({
         connectionRef.current = connection;
       } catch (error) {
         console.error("Comment hub connection failed:", error);
-        showToast?.("Comment connection hazır deyil.", "error");
+        showToast?.("Comment connection is not ready.", "error");
       }
     };
 
@@ -301,22 +292,49 @@ export default function CommentWindow({
     const trimmed = text?.trim();
 
     if (!trimmed) {
-      showToast?.("Comment boş ola bilməz.", "error");
+      showToast?.("Comment cannot be empty.", "error");
       return;
     }
 
     try {
-      if (!connectionRef.current) {
-        showToast?.("Comment connection hazır deyil.", "error");
+      // Try HTTP POST API first (very standard REST conventions)
+      try {
+        const response = await api.post("/Comment/comment", {
+          postId,
+          text: trimmed,
+          content: trimmed, // just in case the backend property is content
+        });
+
+        const rawComment = response.data?.data ?? response.data;
+        const normalized = normalizeComment(rawComment);
+
+        setComments((prev) => {
+          const exists = prev.some((c) => c.commentId === normalized.commentId);
+          if (exists) return prev;
+          onCommentCreated?.();
+          return [...prev, normalized];
+        });
+
+        showToast?.("Comment added successfully.", "success");
         return;
+      } catch (httpErr) {
+        console.warn(
+          "HTTP Comment creation failed or not implemented, trying SignalR:",
+          httpErr,
+        );
+
+        // Fallback to SignalR SendComment
+        if (!connectionRef.current) {
+          showToast?.("Comment connection is not ready.", "error");
+          return;
+        }
+
+        await connectionRef.current.invoke("SendComment", postId, trimmed);
+        showToast?.("Comment added successfully.", "success");
       }
-
-      await connectionRef.current.invoke("SendComment", postId, trimmed);
-
-      showToast?.("Comment əlavə edildi.", "success");
     } catch (error) {
       console.error("Send comment failed:", error);
-      showToast?.("Comment əlavə olunmadı.", "error");
+      showToast?.("Failed to add comment.", "error");
     }
   };
 
@@ -324,10 +342,14 @@ export default function CommentWindow({
     try {
       await api.delete(`/Comment/comment/${commentId}`);
 
-      showToast?.("Comment silindi.", "success");
+      // Manually update local state in case SignalR is not active
+      setComments((prev) => prev.filter((c) => c.commentId !== commentId));
+      onCommentDeleted?.();
+
+      showToast?.("Comment deleted successfully.", "success");
     } catch (err) {
       console.error("Delete failed:", err);
-      showToast?.("Comment silinmədi.", "error");
+      showToast?.("Failed to delete comment.", "error");
     }
   };
 
@@ -335,23 +357,36 @@ export default function CommentWindow({
     const trimmed = text?.trim();
 
     if (!trimmed) {
-      showToast?.("Comment boş ola bilməz.", "error");
+      showToast?.("Comment cannot be empty.", "error");
       return;
     }
 
     try {
       await api.put(`/Comment/comment/${commentId}`, {
         text: trimmed,
+        content: trimmed, // just in case the backend property is content
       });
 
-      showToast?.("Comment yeniləndi.", "success");
+      // Manually update local state in case SignalR is not active
+      setComments((prev) =>
+        prev.map((c) =>
+          c.commentId === commentId
+            ? {
+                ...c,
+                content: trimmed,
+                text: trimmed,
+                updatedAt: new Date().toISOString(),
+              }
+            : c,
+        ),
+      );
+
+      showToast?.("Comment updated successfully.", "success");
     } catch (err) {
       console.error("Update failed:", err.response?.data || err);
-      showToast?.("Comment yenilənmədi.", "error");
+      showToast?.("Failed to update comment.", "error");
     }
   };
-
- 
 
   return (
     <div style={styles.wrapper}>
@@ -401,7 +436,7 @@ const styles = {
     fontSize: "16px",
     fontWeight: 700,
     margin: "0 0 12px",
-    color: "#222",
+    color: "var(--app-text)",
     fontFamily:
       "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   },
@@ -415,15 +450,15 @@ const styles = {
 
   emptyText: {
     fontSize: "13px",
-    color: "#777",
+    color: "var(--app-muted)",
     padding: "6px 0",
     fontFamily:
       "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
   },
 
   loadMoreButton: {
-    border: "1px solid #d0d7de",
-    background: "#fff",
+    border: "1px solid var(--app-border)",
+    background: "var(--app-surface)",
     borderRadius: "999px",
     padding: "8px 14px",
     margin: "2px 0 10px",

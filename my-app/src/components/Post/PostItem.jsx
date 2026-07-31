@@ -1,14 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as signalR from "@microsoft/signalr";
 
+import api, { API_ROOT } from "../../services/api";
 import EditPostModal from "./EditPostModal";
-import pencil from "../../assets/pencil.png";
-import likeActiveIcon from "../../assets/LikeActive.png";
-import likeDeactiveIcon from "../../assets/LikeDeactive.png";
-import commentIcon from "../../assets/comment.png";
 import CommentWindow from "../comment/commentWindow";
+import defaultAvatar from "../../assets/default-avatar.png";
+import "./Post.css";
+import { resolveMediaUrl } from "../../utils/mediaUrl";
+import ProfileIcon from "../Profile/ProfileIcon";
+import RichPostContent from "./RichPostContent";
+import ReportPostModal from "./ReportPostModal";
+import { useNavigate } from "react-router-dom";
 
-const API_BASE_URL = "https://localhost:7257";
+const API_BASE_URL = API_ROOT;
 
 const PostItem = ({
   post,
@@ -19,16 +23,53 @@ const PostItem = ({
   showToast,
   likeConnection,
   defaultCommentsOpen = false,
+  highlighted = false,
+  onSavedChange,
 }) => {
+  const navigate = useNavigate();
   const commentCountConnectionRef = useRef(null);
-
+  const postRef = useRef(null);
+  const postMenuRef = useRef(null);
+  const latestPostRef = useRef(post);
+  const onPostUpdatedRef = useRef(onPostUpdated);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [postMenuOpen, setPostMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [localLikeCount, setLocalLikeCount] = useState(post.likeCount || 0);
   const [isLiked, setIsLiked] = useState(!!post.isLikedByCurrentUser);
-  const [isCommentsOpen, setIsCommentsOpen] = useState(defaultCommentsOpen);  
+  const [isCommentsOpen, setIsCommentsOpen] = useState(defaultCommentsOpen);
   const [localCommentCount, setLocalCommentCount] = useState(
-    post.commentCount || 0
+    post.commentCount || 0,
   );
+  const [isSaved, setIsSaved] = useState(!!post.isSaved);
+  const [localSaveCount, setLocalSaveCount] = useState(
+    Number(post.saveCount ?? post.savedCount ?? post.SaveCount ?? post.SavedCount ?? 0),
+  );
+
+  latestPostRef.current = post;
+  onPostUpdatedRef.current = onPostUpdated;
+
+  useEffect(() => {
+    if (highlighted && postRef.current) {
+      const timer = setTimeout(() => {
+        postRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [highlighted]);
+
+  useEffect(() => {
+    if (!postMenuOpen) return;
+
+    const closeOnOutsideClick = (event) => {
+      if (postMenuRef.current && !postMenuRef.current.contains(event.target)) {
+        setPostMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [postMenuOpen]);
 
   const {
     id,
@@ -42,6 +83,39 @@ const PostItem = ({
   } = post;
 
   useEffect(() => {
+    if (!id || !postRef.current || typeof IntersectionObserver === "undefined") {
+      return undefined;
+    }
+
+    const storageKey = `nexora-post-view-${id}`;
+    if (sessionStorage.getItem(storageKey)) return undefined;
+
+    let visibleTimer;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        window.clearTimeout(visibleTimer);
+        if (!entry?.isIntersecting || entry.intersectionRatio < 0.6) return;
+
+        visibleTimer = window.setTimeout(() => {
+          sessionStorage.setItem(storageKey, "1");
+          api.post(`/Analytics/track/post-view/${id}`).catch((error) => {
+            sessionStorage.removeItem(storageKey);
+            console.error("Post analytics tracking failed:", error);
+          });
+          observer.disconnect();
+        }, 1000);
+      },
+      { threshold: [0.6] },
+    );
+
+    observer.observe(postRef.current);
+    return () => {
+      window.clearTimeout(visibleTimer);
+      observer.disconnect();
+    };
+  }, [id]);
+
+  useEffect(() => {
     setLocalLikeCount(post.likeCount || 0);
     setIsLiked(!!post.isLikedByCurrentUser);
   }, [post.likeCount, post.isLikedByCurrentUser]);
@@ -49,12 +123,22 @@ const PostItem = ({
   useEffect(() => {
     setLocalCommentCount(post.commentCount || 0);
   }, [post.commentCount]);
-  
+
   useEffect(() => {
-  if (defaultCommentsOpen) {
-    setIsCommentsOpen(true);
-  }
-}, [defaultCommentsOpen]);
+    setIsSaved(!!post.isSaved);
+  }, [post.isSaved]);
+
+  useEffect(() => {
+    setLocalSaveCount(
+      Number(post.saveCount ?? post.savedCount ?? post.SaveCount ?? post.SavedCount ?? 0),
+    );
+  }, [post.saveCount, post.savedCount, post.SaveCount, post.SavedCount]);
+
+  useEffect(() => {
+    if (defaultCommentsOpen) {
+      setIsCommentsOpen(true);
+    }
+  }, [defaultCommentsOpen]);
 
   useEffect(() => {
     if (!id) return;
@@ -77,8 +161,8 @@ const PostItem = ({
 
           setLocalCommentCount(count);
 
-          onPostUpdated?.({
-            ...post,
+          onPostUpdatedRef.current?.({
+            ...latestPostRef.current,
             commentCount: count,
           });
         });
@@ -87,7 +171,7 @@ const PostItem = ({
           connection
             .invoke("JoinPostCounter", id)
             .catch((err) =>
-              console.error("JoinPostCounter after reconnect failed:", err)
+              console.error("JoinPostCounter after reconnect failed:", err),
             );
         });
 
@@ -120,14 +204,9 @@ const PostItem = ({
 
       commentCountConnectionRef.current = null;
     };
-  }, [id, onPostUpdated, post]);
+  }, [id]);
 
   const handleLike = async () => {
-    if (!likeConnection) {
-      showToast?.("Like connection hazır deyil.", "error");
-      return;
-    }
-
     const previousLiked = isLiked;
     const previousCount = localLikeCount;
 
@@ -140,7 +219,13 @@ const PostItem = ({
     setLocalLikeCount(nextCount);
 
     try {
-      await likeConnection.invoke("ToggleLike", id);
+      if (previousLiked) {
+        // HTTP DELETE request to unlike
+        await api.delete(`/Like/${id}`);
+      } else {
+        // HTTP POST request to like
+        await api.post(`/Like/${id}`);
+      }
 
       onPostUpdated?.({
         ...post,
@@ -148,23 +233,107 @@ const PostItem = ({
         isLikedByCurrentUser: nextLiked,
       });
     } catch (error) {
-      console.error("Like failed:", error);
+      console.warn(
+        "HTTP Like action failed, attempting SignalR fallback:",
+        error,
+      );
 
+      if (likeConnection) {
+        try {
+          await likeConnection.invoke("ToggleLike", id);
+          onPostUpdated?.({
+            ...post,
+            likeCount: nextCount,
+            isLikedByCurrentUser: nextLiked,
+          });
+          return;
+        } catch (hubErr) {
+          console.error("SignalR ToggleLike failed:", hubErr);
+        }
+      }
+
+      // Revert local state if both failed
       setIsLiked(previousLiked);
       setLocalLikeCount(previousCount);
 
-      showToast?.("Like əməliyyatı uğursuz oldu.", "error");
+      showToast?.("Like action failed.", "error");
     }
   };
 
   const handleCommentCreated = () => {
-    // Comment count artıq ReceiveCommentCountUpdated ilə gəlir.
-    // Ona görə burada manual artırmırıq ki, count 2 dəfə artmasın.
+    // Comment count is updated automatically via SignalR in ReceiveCommentCountUpdated
   };
 
   const handleCommentDeleted = () => {
-    // Comment count artıq ReceiveCommentCountUpdated ilə gəlir.
-    // Ona görə burada manual azaltmırıq ki, count 2 dəfə azalmasın.
+    // Comment count is updated automatically via SignalR in ReceiveCommentCountUpdated
+  };
+
+  const handleShare = async () => {
+    const shareUrl = `${window.location.origin}/profile/${username}/activity?postId=${id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${username || "User"}'s Post`,
+          text: content || "Check out this post on Nexora!",
+          url: shareUrl,
+        });
+        showToast?.("Shared successfully!", "success");
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.error("Native share failed, falling back to copy:", err);
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            showToast?.("Link copied to clipboard!", "success");
+          } catch (clipErr) {
+            console.error("Clipboard copy failed:", clipErr);
+          }
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast?.("Link copied to clipboard!", "success");
+      } catch (clipErr) {
+        console.error("Clipboard copy failed:", clipErr);
+      }
+    }
+  };
+
+  const handleSave = async () => {
+    const previous = isSaved;
+    const nextSaved = !previous;
+    const previousCount = localSaveCount;
+    const nextCount = Math.max(0, previousCount + (nextSaved ? 1 : -1));
+    setIsSaved(nextSaved);
+    setLocalSaveCount(nextCount);
+
+    try {
+      if (previous) {
+        await api.delete(`/SavedPost/${id}`);
+      } else {
+        await api.post(`/SavedPost/${id}`);
+      }
+      onSavedChange?.(id, nextSaved, nextCount);
+      onPostUpdated?.({
+        ...post,
+        isSaved: nextSaved,
+        saveCount: nextCount,
+        savedCount: nextCount,
+      });
+      window.dispatchEvent(
+        new CustomEvent("nexora:saved-post-changed", {
+          detail: { postId: id, isSaved: nextSaved, saveCount: nextCount },
+        }),
+      );
+    } catch (error) {
+      setIsSaved(previous);
+      setLocalSaveCount(previousCount);
+      showToast?.("Saved post action failed.", "error");
+    }
+  };
+
+  const openAuthorProfile = () => {
+    if (username) navigate(`/profile/${username}`);
   };
 
   const formattedDate = createdAt
@@ -175,105 +344,163 @@ const PostItem = ({
       })
     : "";
 
-  const profileImageSrc = userPhoto
-    ? `${API_BASE_URL}${userPhoto}`
-    : "https://via.placeholder.com/48";
-
-  const postImageSrc = imageUrl ? `${API_BASE_URL}${imageUrl}` : null;
-  const postVideoSrc = videoUrl ? `${API_BASE_URL}${videoUrl}` : null;
+  const profileImageSrc = resolveMediaUrl(userPhoto, defaultAvatar);
+  const postImageSrc = resolveMediaUrl(imageUrl) || null;
+  const postVideoSrc = resolveMediaUrl(videoUrl) || null;
 
   return (
     <>
-      <div style={styles.card}>
-        <div style={styles.header}>
-          <div style={styles.authorSection}>
+      <div
+        className={`post-card ${highlighted ? "highlighted-post" : ""}`}
+        ref={postRef}
+      >
+        <div className="post-header">
+          <div className="post-author-section">
             <img
               src={profileImageSrc}
               alt={username || "User"}
+              className="post-avatar"
               style={{
-                ...styles.avatar,
                 borderRadius: isEmployer ? "8px" : "50%",
               }}
+              onError={(e) => {
+                e.currentTarget.src = defaultAvatar;
+              }}
+              onClick={openAuthorProfile}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openAuthorProfile();
+                }
+              }}
+              role="button"
+              tabIndex={0}
             />
 
             <div>
-              <div style={styles.authorName}>{username || "Unknown User"}</div>
-              <div style={styles.authorMeta}>
+              <button
+                type="button"
+                className="post-author-name post-author-link"
+                onClick={openAuthorProfile}
+              >
+                {username || "Unknown User"}
+              </button>
+              <div className="post-author-meta">
                 {role || "Member"}
                 {formattedDate ? ` • ${formattedDate}` : ""}
               </div>
             </div>
           </div>
 
-          {showActions && (
+          {showActions ? (
             <button
               type="button"
-              style={styles.pencilButton}
+              className="post-pencil-btn profile-icon-button"
               onClick={() => setIsEditOpen(true)}
+              aria-label="Edit post"
             >
-              <img src={pencil} alt="Edit post" style={styles.pencilIcon} />
+              <ProfileIcon name="edit" size={18} />
             </button>
+          ) : (
+            <div className="post-more-wrap" ref={postMenuRef}>
+              <button
+                type="button"
+                className="post-more-button"
+                aria-label="Post actions"
+                aria-expanded={postMenuOpen}
+                onClick={() => setPostMenuOpen((current) => !current)}
+              >
+                •••
+              </button>
+
+              {postMenuOpen && (
+                <div className="post-action-menu">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPostMenuOpen(false);
+                      setReportOpen(true);
+                    }}
+                  >
+                    <span aria-hidden="true">!</span>
+                    <div>
+                      <strong>Report post</strong>
+                      <small>Send a private report to moderation</small>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        {content && <div style={styles.content}>{content}</div>}
+        {content && (
+          <RichPostContent content={content} className="post-content" />
+        )}
 
         {postImageSrc && (
-          <img src={postImageSrc} alt="Post" style={styles.postImage} />
+          <img src={postImageSrc} alt="Post" className="post-image" />
         )}
 
         {postVideoSrc && (
-          <video controls style={styles.postVideo}>
+          <video controls className="post-video">
             <source src={postVideoSrc} />
             Your browser does not support the video tag.
           </video>
         )}
 
-        <div style={styles.stats}>
+        <div className="post-stats">
           <span>{localLikeCount || 0} likes</span>
 
           <button
             type="button"
-            className="comment-count-button"
-            style={styles.commentCountButton}
+            className="post-comment-count-btn"
             onClick={() => setIsCommentsOpen((prev) => !prev)}
           >
             {localCommentCount || 0} comments
           </button>
         </div>
 
-        <div style={styles.footer}>
+        <div className="post-footer">
           <button
             type="button"
-            className="post-footer-button"
-            style={styles.footerButton}
+            className={`post-footer-btn ${isLiked ? "liked" : ""}`}
             onClick={handleLike}
           >
-            <img
-              src={isLiked ? likeActiveIcon : likeDeactiveIcon}
-              alt={isLiked ? "Liked" : "Like"}
-              style={styles.footerIcon}
-            />
-            <span>{isLiked ? "Liked" : "Like"}</span>
+            <ProfileIcon name="heart" size={18} filled={isLiked} />
+            <span>Like</span>
           </button>
 
           <button
             type="button"
-            className="post-footer-button"
-            style={styles.footerButton}
+            className="post-footer-btn"
             onClick={() => setIsCommentsOpen((prev) => !prev)}
           >
-            <img src={commentIcon} alt="Comment" style={styles.footerIcon} />
+            <ProfileIcon name="comment" size={18} />
             <span>Comment</span>
           </button>
 
-          <button type="button" className="post-footer-button" style={styles.footerButton}>
-            Share
+          <button
+            type="button"
+            className="post-footer-btn"
+            onClick={handleShare}
+          >
+            <ProfileIcon name="share" size={18} />
+            <span>Share</span>
+          </button>
+
+          <button
+            type="button"
+            className={`post-footer-btn ${isSaved ? "saved" : ""}`}
+            onClick={handleSave}
+          >
+            <ProfileIcon name="bookmark" size={18} filled={isSaved} />
+            <span>{isSaved ? "Saved" : "Save"}</span>
           </button>
         </div>
 
         {isCommentsOpen && (
-          <div style={styles.commentsBox}>
+          <div className="post-comments-box">
             <CommentWindow
               postId={id}
               isPostOwner={showActions}
@@ -306,162 +533,16 @@ const PostItem = ({
           }}
         />
       )}
+
+      {reportOpen && (
+        <ReportPostModal
+          postId={id}
+          onClose={() => setReportOpen(false)}
+          showToast={showToast}
+        />
+      )}
     </>
   );
-};
-
-const styles = {
-  card: {
-    backgroundColor: "#fff",
-    border: "1px solid #e0e0e0",
-    borderRadius: "16px",
-    padding: "16px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-  },
-
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "12px",
-    marginBottom: "14px",
-  },
-
-  authorSection: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-
-  avatar: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "50%",
-    objectFit: "cover",
-    border: "1px solid #ddd",
-  },
-
-  authorName: {
-    fontSize: "16px",
-    fontWeight: "600",
-    color: "#222",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  authorMeta: {
-    fontSize: "13px",
-    color: "#666",
-    marginTop: "2px",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  content: {
-    fontSize: "15px",
-    lineHeight: "1.6",
-    color: "#222",
-    marginBottom: "14px",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  postImage: {
-    width: "100%",
-    maxHeight: "420px",
-    objectFit: "cover",
-    borderRadius: "14px",
-    marginBottom: "14px",
-    border: "1px solid #eee",
-  },
-
-  postVideo: {
-    width: "100%",
-    maxHeight: "420px",
-    borderRadius: "14px",
-    marginBottom: "14px",
-    border: "1px solid #eee",
-    backgroundColor: "#000",
-  },
-
-  stats: {
-    display: "flex",
-    justifyContent: "space-between",
-    fontSize: "13px",
-    color: "#666",
-    paddingBottom: "12px",
-    marginBottom: "12px",
-    borderBottom: "1px solid #eee",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
-
-  footer: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "8px",
-  },
-
-  footerButton: {
-    flex: 1,
-    border: "none",
-    background: "transparent",
-    padding: "10px 12px",
-    borderRadius: "10px",
-    cursor: "pointer",
-    fontSize: "14px",
-    fontWeight: "600",
-    color: "#444",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "7px",
-    transition: "background-color 0.2s ease, opacity 0.2s ease",
-  },
-
-  footerIcon: {
-    width: 18,
-    height: 18,
-    objectFit: "contain",
-  },
-
-  commentsBox: {
-    marginTop: "14px",
-    borderTop: "1px solid #eee",
-    paddingTop: "12px",
-  },
-
-  pencilButton: {
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    padding: 4,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  pencilIcon: {
-    width: 18,
-    height: 18,
-    objectFit: "contain",
-  },
-
-  commentCountButton: {
-    border: "none",
-    background: "transparent",
-    padding: 0,
-    margin: 0,
-    fontSize: "13px",
-    color: "#666",
-    cursor: "pointer",
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-  },
 };
 
 export default PostItem;
