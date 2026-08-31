@@ -231,6 +231,7 @@ export default function EmployerCompanyInfoForm({
           onChange={setIndustry}
           allowCustom
           customLabel="Use custom industry"
+          minSearchLength={0}
           maxLength={100}
           inputStyle={styles.input}
           placeholder="Enter or select an industry"
