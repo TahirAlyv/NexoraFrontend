@@ -115,7 +115,7 @@ export default function EditEducationForm({ education, setUser, onClose }) {
     const payload = {
       school: school.trim(),
       institutionCompanyId,
-      degree: degree.trim() || null,
+      degree: degree.trim(),
       field: field.trim(),
       startMonth: Number(startMonth),
       startYear: Number(startYear),
