@@ -99,10 +99,6 @@ export default function EducationForm({ user, setUser, onClose }) {
       newErrors.school = "School is required.";
     }
 
-    if (!degree.trim()) {
-      newErrors.degree = "Degree is required.";
-    }
-
     if (!field.trim()) {
       newErrors.field = "Field of study is required.";
     }
@@ -147,7 +143,7 @@ export default function EducationForm({ user, setUser, onClose }) {
     const payload = {
       school: school.trim(),
       institutionCompanyId,
-      degree: degree.trim(),
+      degree: degree.trim() || null,
       field: field.trim(),
       startMonth: startMonth ? Number(startMonth) : null,
       startYear: startYear ? Number(startYear) : null,
@@ -225,7 +221,7 @@ export default function EducationForm({ user, setUser, onClose }) {
       </div>
 
       <div style={styles.field}>
-        <label style={styles.label}>Degree*</label>
+        <label style={styles.label}>Degree</label>
         <input
           style={{
             ...styles.input,
@@ -240,7 +236,6 @@ export default function EducationForm({ user, setUser, onClose }) {
             }
           }}
         />
-        {errors.degree && <div style={styles.errorText}>{errors.degree}</div>}
       </div>
 
       <div style={styles.field}>
